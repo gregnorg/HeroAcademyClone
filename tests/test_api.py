@@ -86,5 +86,20 @@ class APITests(unittest.TestCase):
         self.assertEqual(result.get_json()['state']['player'],0)
         self.assertEqual(result.get_json()['state']['turn'],3)
         self.assertEqual(len(result.get_json()['history']),2)
+    def test_winning_plan_commits_without_an_extra_turn(self):
+        m=self.create('practice'); url='/api/matches/'+m['id']; h=self.auth(m['token'])
+        state=server.rules.new_game(1)
+        state['units']=[server.rules.make_unit('crystal',0,0,2,'home'),
+                        server.rules.make_unit('crystal',1,6,2,'enemy'),
+                        server.rules.make_unit('ninja',0,5,2,'ninja')]
+        state['units'][1]['hp']=100
+        with server.database() as db:
+            db.execute('UPDATE matches SET state=%s WHERE id=%s',(server.Jsonb(state),m['id']))
+        result=self.client.post(url+'/submit',headers=h,json={'revision':0,'actions':[
+            {'type':'attack','unit':'ninja','x':6,'y':2}]}).get_json()
+        self.assertEqual(result['state']['winner'],0)
+        self.assertEqual(result['state']['turn'],1)
+        self.assertEqual(len(result['history']),1)
+        self.assertEqual(self.client.get(url,headers=h).get_json()['state'],result['state'])
 
 if __name__=='__main__': unittest.main()

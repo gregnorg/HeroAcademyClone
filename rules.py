@@ -251,6 +251,8 @@ def apply(state, action):
 
 def end_turn(state):
     result = deepcopy(state)
+    if result['winner'] is not None:
+        return result
     side = result['player']
     # A fallen unit survives through its owner's next chance to revive it.
     result['units'] = [u for u in result['units'] if not (u['owner']==side and u['hp']==0 and u.get('ko_turn',result['turn']) < result['turn'])]

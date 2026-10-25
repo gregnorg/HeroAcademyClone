@@ -6,7 +6,7 @@ A playable browser reconstruction of the original Hero Academy's Council faction
 
 Open [the academy](http://localhost:8080) after starting Docker. Choose:
 
-- **Practice:** a deployed Council squad against a simple computer opponent.
+- **Practice:** a deployed Council squad against a computer opponent that plans multi-action turns.
 - **Pass & play:** two players on this Mac, with a handoff between turns.
 - **Friendly duel:** private invitation and player links for asynchronous play. The current localhost setup works only on this Mac; remote friends need hosting.
 
@@ -56,6 +56,7 @@ Rules tests need only Python 3:
 
 ```sh
 python3 -m unittest discover -s tests -p test_rules.py -v
+python3 -m unittest discover -s tests -p test_bot.py -v
 ```
 
 API integration tests require the running Compose stack:
@@ -64,12 +65,12 @@ API integration tests require the running Compose stack:
 docker compose exec -T app python - < tests/test_api.py
 ```
 
-API tests create disposable matches and remove only their own rows. They exercise private access, invitations, preview/commit behavior, stale revisions, malformed actions, replay privacy, resignation, and bot responses. Browser checks cover turn planning, action-plan rewind, draft restoration, submission, replay controls, and pass-and-play handoff. Bot simulations exercised 153 turns across two seeded practice games with no occupancy or health invariant failures; one game reached victory and the other repeated a healing/attacking cycle, a known limitation of the greedy opponent.
+API tests create disposable matches and remove only their own rows. They exercise private access, invitations, preview/commit behavior, stale revisions, malformed actions, replay privacy, resignation, and bot responses. Browser checks cover turn planning, action-plan rewind, draft restoration, submission, replay controls, and pass-and-play handoff. The current planner completed seeded practice games 7 and 17 in 54 and 44 turns, respectively, with no occupancy or health invariant failures; the slowest turn took about 0.6 seconds on the development Mac. Seed 7 previously repeated a healing/attacking cycle under the greedy bot. This bounded planner is still beatable and does not guarantee optimal play.
 
 ## Source layout
 
 - `rules.py`: deterministic Council game engine and public state filtering.
-- `bot.py`: practice opponent.
+- `bot.py`: bounded turn planner for practice.
 - `server.py`: authenticated match API and persistence.
 - `public/`: browser interface, original SVG art, animation, and sound.
 - `tests/`: rules and database integration checks.
