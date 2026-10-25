@@ -1,12 +1,12 @@
 # Crystal Tactics
 
-A playable browser reconstruction of the original Hero Academy's Council faction, with original illustrated characters. Runs locally in Docker with PostgreSQL match storage.
+A playable browser reconstruction of the original Hero Academy's Council and Dark Elf factions, with original illustrated characters. Runs locally in Docker with PostgreSQL match storage.
 
 ## Play
 
-Open [the academy](http://localhost:8080) after starting Docker. Choose:
+Open [the academy](http://localhost:8080) after starting Docker. Choose your faction and your opponent’s faction, then a mode:
 
-- **Practice:** a deployed Council squad against a computer opponent that plans multi-action turns.
+- **Practice:** a deployed squad from each selected faction against a computer opponent that plans multi-action turns.
 - **Pass & play:** two players on this Mac, with a handoff between turns.
 - **Friendly duel:** private invitation and player links for asynchronous play. The current localhost setup works only on this Mac; remote friends need hosting.
 
@@ -14,7 +14,7 @@ Plan up to five actions, undo or reset freely, then submit. Click any step in th
 
 The game includes deployment, movement, equipment, combat, Wizard chains, Knight knockback, Ninja swaps, healing, revival, stomping, consumables, premium squares, reinforcements, victory, and resignation.
 
-**Fidelity:** only Council is implemented. Launch-era stats are sourced, but several interactions and map values remain provisional. See [the fidelity ledger](docs/FIDELITY.md) for evidence, conflicting versions, and remaining work. This is not yet an exact or complete clone.
+**Fidelity:** Council and Dark Elves are playable; the other four factions are not yet implemented. Launch-era stats are sourced, but several interactions and map values remain provisional. See [the fidelity ledger](docs/FIDELITY.md) for evidence, conflicting versions, and remaining work. This is not yet an exact or complete clone.
 
 ## Start on your Mac
 
@@ -57,6 +57,7 @@ Rules tests need only Python 3:
 ```sh
 python3 -m unittest discover -s tests -p test_rules.py -v
 python3 -m unittest discover -s tests -p test_bot.py -v
+python3 -m unittest discover -s tests -p test_dark_elves.py -v
 ```
 
 API integration tests require the running Compose stack:
@@ -69,9 +70,12 @@ API tests create disposable matches and remove only their own rows. They exercis
 
 ## Source layout
 
-- `rules.py`: deterministic Council game engine and public state filtering.
+- `rules.py`: deterministic faction game engine and public state filtering.
 - `bot.py`: bounded turn planner for practice.
 - `server.py`: authenticated match API and persistence.
 - `public/`: browser interface, original SVG art, animation, and sound.
 - `tests/`: rules and database integration checks.
 - `docs/FIDELITY.md`: sourced values and explicit uncertainties.
+
+
+Dark Elves add Void Monks, Impalers, Necromancers, Priestesses, Wraiths, summoned Phantoms, Soulstones, Mana Vials and Soul Harvest. Their card inventory is separate from Council. Faction selection is saved with each match and retained by Play again. Existing Council games continue unchanged. Dark Elf rounding, splash geometry, growth ordering and Soul Harvest distribution remain provisional; consult the fidelity ledger before treating those values as exact.
