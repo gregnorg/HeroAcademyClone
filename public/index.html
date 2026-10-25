@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#111923">
+  <title>Crystal Tactics · Prototype</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header><span class="eyebrow">CRYSTAL TACTICS</span><span class="badge">LOCAL PROTOTYPE</span></header>
+    <section class="intro"><p class="eyebrow">SMALL BOARD. BIG DECISIONS.</p><h1>Make every action count.</h1><p>An asynchronous tactics game inspired by Hero Academy.<br>Our first step: a home for the battlefield.</p></section>
+    <section class="arena" aria-label="Battlefield preview">
+      <div class="matchbar"><strong><i class="blue"></i> Azure team</strong><span>Board preview</span><strong>Ember team <i class="red"></i></strong></div>
+      <div id="board" role="img" aria-label="Nine by five battlefield preview with blue and orange crystals and units"></div>
+      <div class="legend"><span>◆ Crystal</span><span>♜ Guardian</span><span>✦ Mage</span><span>✚ Healing tile</span></div>
+    </section>
+    <section class="bottom"><div><h2>The foundation comes first.</h2><p>This board is a visual preview. Movement, combat, five-action turns, and saved matches are the next milestones.</p></div><aside><span class="eyebrow">SYSTEM STATUS</span><p id="status" role="status">Checking app and database…</p><button id="retry" type="button">Check connection</button></aside></section>
+    <footer>Development build · Original working title and visual design</footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
