@@ -1,4 +1,5 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 import server
 
 class APITests(unittest.TestCase):
@@ -44,6 +45,31 @@ class APITests(unittest.TestCase):
         self.assertEqual(joined.status_code,200)
         self.assertEqual(self.client.post(url+'/join',json={'invite':m['invite']}).status_code,403)
         self.assertEqual(self.client.get(url,headers=self.auth(joined.get_json()['token'])).status_code,200)
+    def test_replay_never_leaks_hands(self):
+        m=self.create(); url='/api/matches/'+m['id']; h=self.auth(m['token'])
+        state=self.client.get(url,headers=h).get_json()['state']
+        index=next(i for i,k in enumerate(state['hand']) if k in server.rules.UNITS)
+        self.client.post(url+'/submit',headers=h,json={'revision':0,'actions':[{'type':'deploy','card':index,'x':0,'y':0}]})
+        replay=self.client.get(url+'/replay/1',headers=h)
+        self.assertEqual(replay.status_code,200)
+        frames=replay.get_json()['frames']
+        self.assertEqual(len(frames),2)
+        self.assertEqual(len(frames[1]['units']),len(frames[0]['units'])+1)
+        for frame in replay.get_json()['frames']:
+            self.assertEqual(frame['hand'],[])
+            self.assertNotIn('hands',frame); self.assertNotIn('decks',frame)
+        self.assertEqual(self.client.get(url+'/replay/1').status_code,403)
+        self.assertEqual(self.client.get(url+'/replay/999',headers=h).status_code,404)
+    def test_simultaneous_submission_commits_once(self):
+        m=self.create(); url='/api/matches/'+m['id']; h=self.auth(m['token'])
+        def submit(_):
+            with server.app.test_client() as client:
+                return client.post(url+'/submit',headers=h,json={'revision':0,'actions':[]}).status_code
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            self.assertEqual(sorted(pool.map(submit,range(2))),[200,409])
+        saved=self.client.get(url,headers=h).get_json()
+        self.assertEqual(saved['revision'],1)
+        self.assertEqual(len(saved['history']),1)
     def test_malformed_action_rejected(self):
         m=self.create(); url='/api/matches/'+m['id']+'/preview'; h=self.auth(m['token'])
         for action in [None,{}, {'type':'deploy','card':True,'x':0,'y':0}, {'type':'teleport','unit':{},'x':0,'y':0}]:

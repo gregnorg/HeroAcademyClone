@@ -122,7 +122,7 @@ def join_match(mid):
 def envelope(row,side,state=None):
     return dict(id=str(row['id']),mode=row['mode'],revision=row['revision'],side=side,joined=row['joined'],
                 state=rules.public_state(state or row['state'],side),
-                history=[{k:v for k,v in h.items() if k!='before'} for h in row['history'][-20:]])
+                history=[{**{k:v for k,v in h.items() if k not in ('before','frames')}, 'replay_available': bool(h.get('frames'))} for h in row['history'][-20:]])
 
 @app.get('/api/matches/<mid>')
 def read_match(mid):
@@ -139,15 +139,17 @@ def replay(row,side,data):
     actions=data.get('actions',[])
     rules.require(isinstance(actions,list) and len(actions)<=5,'A turn has at most five actions.')
     events=[]
+    frames=[rules.public_state(state,None)]
     for action in actions:
         state=rules.apply(state,action); events.extend(state['events'])
-    return state,events
+        frames.append(rules.public_state(state,None))
+    return state,events,frames
 
 @app.post('/api/matches/<mid>/preview')
 def preview(mid):
     data=body()
     with database() as db: row,side=get_match(db,mid)
-    state,events=replay(row,side,data)
+    state,events,frames=replay(row,side,data)
     result=envelope(row,side,state)
     selection=data.get('selection')
     if isinstance(selection,dict):
@@ -164,20 +166,33 @@ def submit(mid):
     with database() as db:
         row,side=get_match(db,mid,True)
         rules.require(row['joined'],'Wait for your friend to join before submitting.')
-        state,events=replay(row,side,data)
+        state,events,frames=replay(row,side,data)
         history=row['history']
-        history.append(dict(turn=state['turn'],player=side,events=events,before=rules.public_state(row['state'],None)))
+        history.append(dict(turn=state['turn'],player=side,events=events,frames=frames,before=rules.public_state(row['state'],None)))
         state=rules.end_turn(state)
         if row['mode']=='practice' and state['winner'] is None:
+            bot_start=state
             before=rules.public_state(state,None)
             state,actions,events=bot.play(state)
-            history.append(dict(turn=state['turn'],player=1,events=events,before=before))
+            frames=[before]
+            for action in actions:
+                bot_start=rules.apply(bot_start,action)
+                frames.append(rules.public_state(bot_start,None))
+            history.append(dict(turn=state['turn'],player=1,events=events,frames=frames,before=before))
             state=rules.end_turn(state)
         revision=row['revision']+1
         db.execute('UPDATE matches SET state=%s,history=%s,revision=%s,updated_at=now() WHERE id=%s',
                    (Jsonb(state),Jsonb(history),revision,mid))
         row.update(state=state,history=history,revision=revision)
     return jsonify(envelope(row,side))
+
+
+@app.get('/api/matches/<mid>/replay/<int:turn>')
+def replay_turn(mid,turn):
+    with database() as db: row,side=get_match(db,mid)
+    entry=next((h for h in row['history'] if h['turn']==turn),None)
+    if not entry or not entry.get('frames'): raise HTTPExceptionWithCode(404,'No replay is available for this turn.')
+    return jsonify(turn=turn,player=entry['player'],frames=entry['frames'])
 
 @app.post('/api/matches/<mid>/resign')
 def resign(mid):
