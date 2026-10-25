@@ -8,7 +8,7 @@ Local Docker foundation for an asynchronous tactics game inspired by Hero Academ
 2. Open Terminal in this project folder:
 
    ```sh
-   cd /Users/gregnorg/Documents/Codex/2026-10-24/ok/outputs/crystal-tactics
+   cd /Users/gregnorg/Projects/HeroAcademyClone
    ```
 
 3. Generate a local database password once (leave an existing `.env` intact):
