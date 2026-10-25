@@ -1,6 +1,6 @@
 # Crystal Tactics
 
-A playable browser reconstruction of the original Hero Academy's Council and Dark Elf factions, with original illustrated characters. Runs locally in Docker with PostgreSQL match storage.
+A playable browser reconstruction of the original Hero Academy's Council, Dark Elf and Dwarf factions, with original illustrated characters. Runs locally in Docker with PostgreSQL match storage.
 
 ## Play
 
@@ -14,7 +14,7 @@ Plan up to five actions, undo or reset freely, then submit. Click any step in th
 
 The game includes deployment, movement, equipment, combat, Wizard chains, Knight knockback, Ninja swaps, healing, revival, stomping, consumables, premium squares, reinforcements, victory, and resignation.
 
-**Fidelity:** Council and Dark Elves are playable; the other four factions are not yet implemented. Launch-era stats are sourced, but several interactions and map values remain provisional. See [the fidelity ledger](docs/FIDELITY.md) for evidence, conflicting versions, and remaining work. This is not yet an exact or complete clone.
+**Fidelity:** Council, Dark Elves and Dwarves are playable; the other three factions are not yet implemented. Launch-era stats are sourced, but several interactions and map values remain provisional. See [the fidelity ledger](docs/FIDELITY.md) for evidence, conflicting versions, and remaining work. This is not yet an exact or complete clone.
 
 ## Start on your Mac
 
@@ -58,6 +58,7 @@ Rules tests need only Python 3:
 python3 -m unittest discover -s tests -p test_rules.py -v
 python3 -m unittest discover -s tests -p test_bot.py -v
 python3 -m unittest discover -s tests -p test_dark_elves.py -v
+python3 -m unittest discover -s tests -p test_dwarves.py -v
 ```
 
 API integration tests require the running Compose stack:
@@ -79,3 +80,8 @@ API tests create disposable matches and remove only their own rows. They exercis
 
 
 Dark Elves add Void Monks, Impalers, Necromancers, Priestesses, Wraiths, summoned Phantoms, Soulstones, Mana Vials and Soul Harvest. Their card inventory is separate from Council. Faction selection is saved with each match and retained by Play again. Existing Council games continue unchanged. Dark Elf rounding, splash geometry, growth ordering and Soul Harvest distribution remain provisional; consult the fidelity ledger before treating those values as exact.
+
+
+Dwarves use the February 2012 launch baseline: Paladin support healing, Gunner spread, Grenadier lobbed splash, Engineer shields, Annihilator knockback/armor weakening, premium-square bonuses, Dwarven Brew and Pulverizer. Later balance buffs are deliberately not mixed in. Shield lifetime, blocked displacement and consumable protection have regression tests.
+
+All heroes use original rounded vector illustrations with expressive faces, faction equipment and subtle idle/blink motion. Attacks have wind-up/recoil, hit reactions and particles; shields and Brew have visible protection effects. Reduced-motion preferences disable these animations. These are original approximations, not the original sprites or animation files.
