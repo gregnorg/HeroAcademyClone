@@ -1,6 +1,6 @@
 # Fidelity ledger
 
-Target: original Hero Academy, Council and Dark Elves. This is an independent reconstruction, not verified original code. Numerical parity is a goal, not a completed claim. The launch-era stat baseline is deliberately separate from later balance values.
+Target: original Hero Academy, Council, Dark Elves and Dwarves. This is an independent reconstruction, not verified original code. Numerical parity is a goal, not a completed claim. The launch-era stat baseline is deliberately separate from later balance values.
 
 ## Sources
 
@@ -37,7 +37,7 @@ Five actions; six-card hand; Manhattan movement; deployment; typed damage; Arche
 
 ## Remaining product scope
 
-Dwarves, Tribe, Shaolin, Team Fortress and additional maps, authenticated accounts, matchmaking, push notifications, production hosting, and original sound/animation parity remain separate milestones. Never replace an unknown mechanic with a claimed verified value.
+Tribe, Shaolin, Team Fortress and additional maps, authenticated accounts, matchmaking, push notifications, production hosting, and original sound/animation parity remain separate milestones. Never replace an unknown mechanic with a claimed verified value.
 
 
 ## Dark Elves — first playable reconstruction
@@ -55,3 +55,12 @@ These mechanics are **provisional**, not verified exact values:
 - Mana Vial adds a flat 50 maximum HP and heals 1000 without revival. Percentage equipment bonuses apply only to base HP; growth and harvested health are additive.
 
 Old saved Council matches default to Council when faction metadata is absent. Existing hands, boards and decks are preserved. No original game art or source code is imported.
+
+
+## Dwarves: February 2012 launch baseline
+
+Reference: [Wyatt Cheng’s firsthand measurements, February 26](https://wyattcheng.blogspot.com/2012/02/). Use the measured launch values, not the later patch-note amendments: no Paladin aura, Engineer shield range two, 500-damage Pulverizer without equipment stripping, and launch splash falloff. This deliberately differs from later-client Dwarves.
+
+Paladin healing range two and revival at one times power are provisional. Self-healing uses half actual restored HP. Gunner range two and diagonal fan geometry need original-client fixtures. Splash damage currently truncates integers instead of applying the reference’s nearest-five rounding everywhere. Splash/assault/armor ordering and knockback collisions also need comparison. Engineer shields negate a hit and displacement; launch-era debuffs can still apply. Killing the Engineer clears its shield. Brew adds resistance for one hit, not a universal damage multiplier. No later aura or armor stripping has been silently mixed into this baseline.
+
+The model remains a reconstruction; passing tests establish implementation consistency, not proof of original-client parity.

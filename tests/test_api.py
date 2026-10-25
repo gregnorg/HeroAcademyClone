@@ -112,5 +112,19 @@ class APITests(unittest.TestCase):
         self.assertEqual(result.get_json()['state']['player'],0)
         for factions in [[],['council'],['fake','council'],[{},'council']]:
             self.assertEqual(self.client.post('/api/matches',json={'factions':factions}).status_code,400)
+    def test_dwarves_and_saved_barrier(self):
+        response=self.client.post('/api/matches',json={'mode':'practice','factions':['dwarves','dark_elves']})
+        self.assertEqual(response.status_code,201)
+        m=response.get_json();self.ids.append(m['id'])
+        url='/api/matches/'+m['id'];h=self.auth(m['token'])
+        state=self.client.get(url,headers=h).get_json()['state']
+        engineer=next(u for u in state['units'] if u['kind']=='engineer')
+        action=dict(type='barrier',unit=engineer['id'],x=2,y=1)
+        preview=self.client.post(url+'/preview',headers=h,json={'revision':0,'actions':[action]}).get_json()
+        self.assertTrue(next(u for u in preview['state']['units'] if u['id']=='c00')['barrier'])
+        result=self.client.post(url+'/submit',headers=h,json={'revision':0,'actions':[action]})
+        self.assertEqual(result.status_code,200)
+        self.assertEqual(result.get_json()['state']['factions'],['dwarves','dark_elves'])
+        self.assertEqual(self.client.get(url,headers=h).get_json()['state'],result.get_json()['state'])
 
 if __name__=='__main__': unittest.main()

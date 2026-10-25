@@ -1,6 +1,8 @@
 """Independent rules engine. All actions are deterministic; see docs/FIDELITY.md."""
 from copy import deepcopy
 import random
+import sys
+import dwarves
 
 VERSION = 'council-2012-reconstruction-v1'
 UNITS = {
@@ -40,6 +42,8 @@ FACTIONS={
     'council':dict(name='Council',deck=DECK,squad=['knight','archer','cleric','wizard','ninja']),
     'dark_elves':dict(name='Dark Elves',deck=DARK_DECK,squad=['void_monk','impaler','priestess','necromancer','wraith'])}
 
+dwarves.register(sys.modules[__name__])
+
 # Zero-based coordinates, from the annotated map in Justesen (2015).
 TILES = {'0,0': 'deploy0', '0,4': 'deploy0', '8,0': 'deploy1', '8,4': 'deploy1',
          '4,0': 'defense', '4,4': 'assault', '2,2': 'power', '6,2': 'power'}
@@ -66,13 +70,16 @@ def stats(unit):
     base['hp'] += (base['hp']//10) * sum(g in gear for g in ('helm','soulstone'))
     base['hp'] += unit.get('bonus_hp',0)+150*unit.get('souls',0)
     base['power'] += 50*unit.get('souls',0)
+    if unit['kind'] in dwarves.KINDS and tile(unit)=='power': base['power']+=dwarves.premium(unit,100)
     base['power'] = int(base['power'] * (1.5 if 'sword' in gear else 1))
-    if tile(unit) == 'power':
+    if tile(unit) == 'power' and unit['kind'] not in dwarves.KINDS:
         base['power'] += 100
     if 'scroll' in gear:
         base['power'] *= 3
-    base['physical'] += (20 if 'shield' in gear else 0) + (20 if tile(unit) == 'defense' else 0)
+    base['physical'] += (20 if 'shield' in gear else 0) + (dwarves.premium(unit,20) if tile(unit) == 'defense' else 0)
     base['magical'] += 20 if 'helm' in gear else 0
+    base['physical'] += (50 if unit.get('brew') else 0)-(50 if unit.get('armor_break') else 0)
+    base['magical'] += 50 if unit.get('brew') else 0
     return base
 
 def at(state, x, y):
@@ -136,17 +143,25 @@ def damage_amount(state, source, target, multiplier=1):
         power *= 2
     power = int(power * multiplier)
     if target['kind'] == 'crystal':
-        power += 300 * sum(u['owner'] == source['owner'] and u['hp'] > 0 and tile(u) == 'assault' for u in state['units'])
-    return int(power * (100 - stats(target)[UNITS[source['kind']]['damage']]) / 100)
+        power += dwarves.assault(state,source['owner'])
+    return max(0,int(power * (100 - stats(target)[UNITS[source['kind']]['damage']]) / 100))
 
-def hurt(state, target, amount):
+def hurt(state, target, amount, damage_type='magical'):
+    before=target['hp']
+    if target.pop('barrier',None): amount=0
+    else:
+        target.pop('brew',None)
+        if damage_type=='physical': target.pop('armor_break',None)
     target['hp'] = max(0, target['hp'] - amount)
     state['events'].append(dict(type='damage', target=target['id'], x=target['x'], y=target['y'], amount=amount))
     if target['hp'] == 0:
+        for u in state['units']:
+            if u.get('barrier')==target['id']: u.pop('barrier',None)
         if target['kind'] in ('crystal','phantom'):
             state['units'].remove(target)
         else:
             target['ko_turn'] = state['turn']
+    return before-target['hp']
 
 def check_winner(state):
     for side in (0,1):
@@ -193,7 +208,10 @@ def apply(state, action):
             result['events'].append(dict(type='deploy', target=unit['id'], x=x,y=y,label=f'Deployed {UNITS[card]["name"]}'))
         else:
             require(card in ITEMS, 'Choose an item card.')
-            if card == 'soul_harvest':
+            if card=='pulverizer':
+                require(target and target['owner']!=side and target['hp']>0,'Choose a standing enemy.')
+                dwarves.pulverize(result,target,side)
+            elif card == 'soul_harvest':
                 drained=0
                 for u in list(result['units']):
                     if u['owner']!=side and u['hp']>0 and abs(u['x']-x)<=1 and abs(u['y']-y)<=1:
@@ -218,7 +236,10 @@ def apply(state, action):
             else:
                 require(target and target['owner']==side and target['kind']!='crystal', 'Choose one of your units.')
                 require(target['kind']!='phantom', 'Phantoms cannot use equipment or potions.')
-                if card == 'mana_vial':
+                if card=='brew':
+                    require(target['hp']>0,'Brew cannot revive.')
+                    target['hp']=min(stats(target)['hp'],target['hp']+1000); target['brew']=True
+                elif card == 'mana_vial':
                     require(target['hp']>0,'Mana Vials cannot revive.')
                     target['bonus_hp']=target.get('bonus_hp',0)+50
                     target['hp']=min(stats(target)['hp'],target['hp']+1000)
@@ -232,9 +253,9 @@ def apply(state, action):
                     oldmax = stats(target)['hp']
                     target['gear'].append(card)
                     target['hp'] += stats(target)['hp']-oldmax
-                result['events'].append(dict(type='heal' if card in ('potion','mana_vial') else 'equip', target=target['id'],x=x,y=y,label=ITEMS[card]['name']))
+                result['events'].append(dict(type='heal' if card in ('potion','mana_vial','brew') else 'equip', target=target['id'],x=x,y=y,label=ITEMS[card]['name']))
         result['hands'][side].pop(card_index)
-    elif kind in ('move','attack','heal','teleport','raise','consume'):
+    elif kind in ('move','attack','heal','teleport','raise','consume','barrier'):
         source = next((u for u in result['units'] if u['id']==action.get('unit')),None)
         require(source and source['owner']==side and source['hp']>0 and source['kind']!='crystal', 'Select one of your standing units.')
         x,y = action.get('x'), action.get('y')
@@ -243,7 +264,14 @@ def apply(state, action):
         destination = dict(x=x,y=y)
         d = distance(source,destination)
         require(d>0, 'Choose another square.')
-        if kind in ('raise','consume'):
+        if kind=='barrier':
+            require(source['kind']=='engineer' and d<=2,'Engineers shield within two squares.')
+            require(target and target['owner']==side and target['hp']>0 and not target.get('barrier'),'Choose an unshielded standing ally or crystal.')
+            for u in result['units']:
+                if u.get('barrier')==source['id']:u.pop('barrier',None)
+            target['barrier']=source['id']
+            result['events'].append(dict(type='barrier',x=x,y=y,label='Engineer shield'))
+        elif kind in ('raise','consume'):
             require(target and target['hp']==0 and target['kind']!='crystal','Choose a fallen hero.')
             if kind=='raise':
                 require(source['kind']=='necromancer' and d<=3,'Necromancers raise corpses within three squares.')
@@ -273,11 +301,15 @@ def apply(state, action):
             source.update(x=x,y=y)
             result['events'].append(dict(type='teleport',target=source['id'],x=x,y=y,label='Ninja swapped positions'))
         elif kind == 'heal':
-            require(source['kind'] in ('cleric','priestess') and target and target['owner']==side and target['kind']!='crystal', 'Clerics heal other friendly units.')
+            require(source['kind'] in ('cleric','priestess','paladin') and target and target['owner']==side and target['kind']!='crystal', 'Clerics heal other friendly units.')
             require(d<=(3 if source['kind']=='priestess' else 2), 'Beyond healing range.')
             require(target['hp']<stats(target)['hp'], 'Already at full health.')
-            amount = int(stats(source)['power'] * ((2 if target['hp'] else .5) if source['kind']=='priestess' else (3 if target['hp'] else 2)))
-            target['hp'] = min(stats(target)['hp'],target['hp']+amount)
+            amount = int(stats(source)['power'] * ((2 if target['hp'] else .5) if source['kind']=='priestess' else ((2 if target['hp'] else 1) if source['kind']=='paladin' else (3 if target['hp'] else 2))))
+            actual=min(stats(target)['hp']-target['hp'],amount)
+            target['hp'] += actual
+            if source['kind']=='paladin':
+                restored=min(stats(source)['hp']-source['hp'],actual//2); source['hp']+=restored
+                result['events'].append(dict(type='heal',x=source['x'],y=source['y'],amount=restored,label='Paladin self-heal'))
             target.pop('ko_turn',None)
             if 'scroll' in source['gear']:
                 source['gear'].remove('scroll')
@@ -285,7 +317,11 @@ def apply(state, action):
         else:
             require(target and target['owner']!=side and target['hp']>0, 'Attack a standing enemy. Move onto a fallen enemy to stomp it.')
             require(d<=stats(source)['reach'], 'Beyond attack range.')
-            require(line_clear(result,source,target), 'An enemy blocks line of sight.')
+            require(source['kind']=='grenadier' or line_clear(result,source,target), 'An enemy blocks line of sight.')
+            if source['kind'] in ('gunner','grenadier','annihilator'):
+                dwarves.attack(result,source,target)
+                result['ap']-=1; check_winner(result); return result
+            shielded=bool(target.get('barrier'))
             result['events'].append(dict(type='attack',source=source['id'],target=target['id'],from_x=source['x'],from_y=source['y'],x=x,y=y,label=f'{UNITS[source["kind"]]["name"]} attacked'))
             chain = [target]
             if source['kind']=='wizard':
@@ -303,21 +339,21 @@ def apply(state, action):
             stolen=0
             for i,u in enumerate(chain):
                 amount=damage_amount(result,source,u,[1,.75,.5][i] if source['kind']=='wizard' else 1)
-                stolen+=min(u['hp'],amount); hurt(result,u,amount)
+                stolen+=hurt(result,u,amount,UNITS[source['kind']]['damage'])
             if source['kind'] in DARK_UNITS:
                 amount=min(stats(source)['hp']-source['hp'],stolen*(2 if 'soulstone' in source['gear'] else 1)//3)
                 source['hp']+=amount
                 if amount: result['events'].append(dict(type='heal',target=source['id'],x=source['x'],y=source['y'],amount=amount,label='Life leech'))
             source.pop('weakened',None)
             if source['kind']=='priestess' and target in result['units'] and target['kind']!='crystal': target['weakened']=True
-            if source['kind']=='impaler' and target in result['units'] and target['kind']!='crystal' and d>1:
+            if source['kind']=='impaler' and not shielded and target in result['units'] and target['kind']!='crystal' and d>1:
                 dx=source['x']-target['x']; dy=source['y']-target['y']
                 nx=target['x']+(1 if dx>0 else -1 if dx<0 else 0)
                 ny=target['y']+(1 if dy>0 else -1 if dy<0 else 0)
                 if at(result,nx,ny) is None and TILES.get(f'{nx},{ny}')!=f'deploy{side}': target.update(x=nx,y=ny)
             if 'scroll' in source['gear']:
                 source['gear'].remove('scroll')
-            if source['kind']=='knight' and target in result['units'] and target['kind']!='crystal':
+            if source['kind']=='knight' and not shielded and target in result['units'] and target['kind']!='crystal':
                 nx,ny = target['x']+(target['x']-source['x']),target['y']+(target['y']-source['y'])
                 if 0<=nx<9 and 0<=ny<5 and at(result,nx,ny) is None and TILES.get(f'{nx},{ny}') != f'deploy{side}':
                     target.update(x=nx,y=ny)
@@ -348,7 +384,7 @@ def legal_actions(state, unit_id=None, card=None):
     actions=[]
     candidates=[]
     if unit_id is not None:
-        candidates=[dict(type=t,unit=unit_id,x=x,y=y) for t in ('move','attack','heal','teleport','raise','consume') for y in range(5) for x in range(9)]
+        candidates=[dict(type=t,unit=unit_id,x=x,y=y) for t in ('move','attack','heal','teleport','raise','consume','barrier') for y in range(5) for x in range(9)]
     elif card is not None:
         candidates=[dict(type=t,card=card,x=x,y=y) for t in ('deploy','item') for y in range(5) for x in range(9)]
         candidates.append(dict(type='swap_card',card=card))
