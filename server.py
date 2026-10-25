@@ -89,14 +89,14 @@ def health():
 
 @app.get('/api/rules')
 def rulebook():
-    return jsonify(version=rules.VERSION,units=rules.UNITS,items=rules.ITEMS,deck=rules.DECK,tiles=rules.TILES)
+    return jsonify(version=rules.VERSION,units=rules.UNITS,items=rules.ITEMS,deck=rules.DECK,factions=rules.FACTIONS,tiles=rules.TILES)
 
 @app.post('/api/matches')
 def create_match():
     data=body(); mode=data.get('mode','practice')
     rules.require(mode in ('practice','hotseat','friend'),'Choose a supported game mode.')
     mid=str(uuid.uuid4()); token0=secrets.token_urlsafe(32); token1=secrets.token_urlsafe(32); invite=secrets.token_urlsafe(24)
-    state=rules.new_game(secrets.randbits(64),practice=mode=='practice')
+    state=rules.new_game(secrets.randbits(64),practice=mode=='practice',factions=data.get('factions'))
     with database() as db:
         db.execute('INSERT INTO matches (id,mode,state,token0,token1,invite,joined) VALUES (%s,%s,%s,%s,%s,%s,%s)',
                    (mid,mode,Jsonb(state),digest(token0),digest(token1) if mode!='friend' else None,digest(invite) if mode=='friend' else None,mode!='friend'))

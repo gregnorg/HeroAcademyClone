@@ -14,7 +14,7 @@ def evaluate(state, side):
             score += sign*u['hp']*.7
         elif u['hp']>0:
             score += sign*(u['hp']*.6+350+len(u['gear'])*100)
-            if u['kind']=='cleric': score += sign*150
+            if u['kind'] in ('cleric','priestess'): score += sign*150
             if sign==1 and enemies:
                 score -= min(distance(u,v) for v in enemies)*24
         else:
@@ -35,7 +35,9 @@ def successors(state):
                 kinds=[]
                 if d<=st['move']: kinds.append('move')
                 if d<=st['reach']: kinds.append('attack')
-                if unit['kind']=='cleric' and d<=2: kinds.append('heal')
+                if unit['kind'] in ('cleric','priestess') and d<=(3 if unit['kind']=='priestess' else 2): kinds.append('heal')
+                if unit['kind']=='necromancer' and d<=3: kinds.append('raise')
+                if unit['kind']=='wraith' and d<=1: kinds.append('consume')
                 if unit['kind']=='ninja': kinds.append('teleport')
                 candidates.extend(dict(type=t,unit=unit['id'],x=x,y=y) for t in kinds)
     seen_cards=set()
@@ -51,7 +53,7 @@ def successors(state):
 
 def position_key(state):
     # Excludes opponent hand/deck: neither search nor tie-breaking may use them.
-    return (tuple((u['id'],u['x'],u['y'],u['hp'],tuple(u['gear'])) for u in state['units']),
+    return (tuple((u['id'],u['x'],u['y'],u['hp'],tuple(u['gear']),u.get('souls',0),u.get('bonus_hp',0),u.get('weakened',False)) for u in state['units']),
             tuple(state['hands'][state['player']]))
 
 def play(state):

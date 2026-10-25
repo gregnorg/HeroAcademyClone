@@ -101,5 +101,16 @@ class APITests(unittest.TestCase):
         self.assertEqual(result['state']['turn'],1)
         self.assertEqual(len(result['history']),1)
         self.assertEqual(self.client.get(url,headers=h).get_json()['state'],result['state'])
+    def test_dark_elf_match_and_bot(self):
+        response=self.client.post('/api/matches',json={'mode':'practice','factions':['council','dark_elves']})
+        self.assertEqual(response.status_code,201)
+        m=response.get_json();self.ids.append(m['id'])
+        url='/api/matches/'+m['id'];h=self.auth(m['token'])
+        result=self.client.post(url+'/submit',headers=h,json={'revision':0,'actions':[]})
+        self.assertEqual(result.status_code,200)
+        self.assertEqual(result.get_json()['state']['factions'],['council','dark_elves'])
+        self.assertEqual(result.get_json()['state']['player'],0)
+        for factions in [[],['council'],['fake','council'],[{},'council']]:
+            self.assertEqual(self.client.post('/api/matches',json={'factions':factions}).status_code,400)
 
 if __name__=='__main__': unittest.main()

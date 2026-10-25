@@ -1,6 +1,6 @@
 # Fidelity ledger
 
-Target: original Hero Academy, starting with the Council. This is an independent reconstruction, not verified original code. Numerical parity is a goal, not a completed claim. The launch-era stat baseline is deliberately separate from later balance values.
+Target: original Hero Academy, Council and Dark Elves. This is an independent reconstruction, not verified original code. Numerical parity is a goal, not a completed claim. The launch-era stat baseline is deliberately separate from later balance values.
 
 ## Sources
 
@@ -37,4 +37,21 @@ Five actions; six-card hand; Manhattan movement; deployment; typed damage; Arche
 
 ## Remaining product scope
 
-Other factions and maps, authenticated accounts, matchmaking, push notifications, production hosting, and original sound/animation parity remain separate milestones. Never replace an unknown mechanic with a claimed verified value.
+Dwarves, Tribe, Shaolin, Team Fortress and additional maps, authenticated accounts, matchmaking, push notifications, production hosting, and original sound/animation parity remain separate milestones. Never replace an unknown mechanic with a claimed verified value.
+
+
+## Dark Elves — first playable reconstruction
+
+Base hero statistics, faction life leech, corpse abilities and item purposes follow the firsthand launch guide above. The deck follows the [firsthand inventory count](https://wyattcheng.blogspot.com/2012/02/): three each of the four standard heroes, one Wraith, three each sword/Soulstone/helm, and two each scroll/Mana Vial/Soul Harvest. Phantoms are summoned, never drawn.
+
+These mechanics are **provisional**, not verified exact values:
+
+- Life leech uses one third of actual health removed, or two thirds with Soulstone, rounded down; overkill, crystal and splash treatment need original-client comparison.
+- Priestess heals at 2× power and revives at 0.5× power. Weakening halves the next attack only. The latter is corroborated by [Wyatt Cheng's firsthand January notes](https://wyattcheng.blogspot.com/2012/01/).
+- Wraith consumption is an adjacent action with +150 HP/+50 power for its first three corpses. Corpse deployment grants the first growth stack. Growth/equipment ordering and whether deployment grants growth need comparison.
+- Void Monk splash covers the target's two perpendicular neighbors and the square directly behind. Impaler diagonal pulls step diagonally; blocked pulls do not displace. These geometric choices need fixtures.
+- Necromancer raising uses Manhattan range three; no line-of-sight check. Phantoms disappear at zero health and cannot use equipment or potions. Phantom leech and corpse behavior need comparison.
+- Soul Harvest distributes actual damage / (3 + friendly hero count), rounded to nearest five, as both current and maximum health. No damage means no revival. The launch author explicitly could not establish its formula. This implementation is a provisional reconstruction, not a verified formula.
+- Mana Vial adds a flat 50 maximum HP and heals 1000 without revival. Percentage equipment bonuses apply only to base HP; growth and harvested health are additive.
+
+Old saved Council matches default to Council when faction metadata is absent. Existing hands, boards and decks are preserved. No original game art or source code is imported.
