@@ -1,3 +1,6 @@
 .env
 __pycache__/
 *.pyc
+work/
+.DS_Store
+.pytest_cache/
