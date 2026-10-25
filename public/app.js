@@ -39,7 +39,6 @@ async function create(mode){
  catch(e){toast(e.message);}finally{lock(false);}
 }
 async function openMatch(save){
- if(busy&&current)return;
  lock(true);current=save;selected=null;legal=[];actions=[];
  try{view=await api(`/matches/${save.id}`);save.side=view.side;save.mode=view.mode;
  $('#lobby').hidden=true;$('#game').hidden=false;history.replaceState(null,'',`#match=${save.id}`);
@@ -65,11 +64,22 @@ function renderBoard(){
  if(!matchMedia('(prefers-reduced-motion: reduce)').matches){for(const el of board.querySelectorAll('.unit')){const previous=old.get(el.dataset.id),next=el.getBoundingClientRect();if(previous&&(previous.x!==next.x||previous.y!==next.y)){el.animate([{translate:`${previous.x-next.x}px ${previous.y-next.y}px`},{translate:'0 0'}],{duration:300,easing:'ease-out'});}}}
 }
 function renderHand(){const hand=$('#hand');hand.innerHTML='';view.state.hand.forEach((kind,i)=>{const button=document.createElement('button');button.className='card'+(selected?.card===i?' selected':'');button.innerHTML=portrait(kind,view.side)+`<strong>${esc(name(kind))}</strong><small>${rulebook.units[kind]?'HERO':'ITEM'} · 1 ACTION</small>`;button.setAttribute('aria-label',`Select ${name(kind)}`);button.onclick=()=>select({card:i});button.disabled=!canPlay()||busy;hand.append(button);});for(let i=view.state.hand.length;i<6;i++){const slot=document.createElement('div');slot.className='card empty-card';slot.innerHTML='◆';hand.append(slot);}}
+function renderPlan(){
+ const labels={swap_card:'Exchange',teleport:'Swap',item:'Use item',deploy:'Deploy',move:'Move',attack:'Attack',heal:'Heal'};
+ $('#turn-plan').innerHTML=actions.map((a,i)=>`<button class="plan-step" data-rewind="${i}" ${busy?'disabled':''} title="Undo this action and everything after it"><b>${i+1}</b> ${labels[a.type]||a.type}${a.x!==undefined?' → '+String.fromCharCode(65+a.x)+(a.y+1):''}<span aria-hidden="true"> ↶</span></button>`).join('');
+ const latest=[...(view.history||[])].reverse().find(h=>h.player!==view.side&&h.replay_available);
+ $('#watch-latest').hidden=!latest;$('#watch-latest').disabled=busy;
+ if(latest)$('#watch-latest').dataset.turn=latest.turn;
+ $('#pass-device').hidden=current.mode!=='hotseat'||view.state.player===view.side||view.state.winner!==null;
+ $('#pass-device').disabled=busy;
+ $('#play-again').hidden=view.state.winner===null||actions.length>0;
+ $('#play-again').disabled=busy;
+}
 function renderControls(){
- if(!view)return;const s=view.state;
+ if(!view)return;const s=view.state;renderPlan();
  $('#avatar0').innerHTML=portrait('knight',0);$('#avatar1').innerHTML=portrait('wizard',1);
  $('#reserve0').textContent=`${s.remaining[0]} reinforcements`;$('#reserve1').textContent=`${s.remaining[1]} reinforcements`;
- $('#turn-label').textContent=`TURN ${s.turn}`;$('#turn-status').textContent=s.winner!==null?`${team(s.winner)} wins!`:canPlay()?'Your turn':`${team(s.player)} is playing`;
+ $('#turn-label').textContent=`TURN ${s.turn}`;$('#turn-status').textContent=s.winner!==null?`${team(s.winner)} wins!`:canPlay()?`Your turn · ${team(view.side)}`:`${team(s.player)} is playing`;
  $('#mode-label').textContent=current.mode==='practice'?'Practice · Council vs Council':current.mode==='hotseat'?'Pass & play · Council':'Friendly duel · Council';
  $('#ap-number').textContent=s.ap;$('#ap-pips').innerHTML=Array.from({length:5},(_,i)=>`<i class="${i>=s.ap?'spent':''}"></i>`).join('');
  $('#undo').disabled=busy||!actions.length;$('#reset').disabled=busy||!actions.length;
@@ -102,8 +112,8 @@ async function perform(action){
  catch(e){toast(e.message);}finally{lock(false);renderHand();}
  if(selected&&canAct())await select(selected);
 }
-async function undo(reset=false){if(busy||!actions.length)return;lock(true);selectionEpoch++;const next=reset?[]:actions.slice(0,-1);try{const data=await api(`/matches/${current.id}/preview`,{method:'POST',body:{revision:view.revision,actions:next}});actions=next;view=data;selected=null;legal=[];saveDraft();render();}catch(e){toast(e.message);}finally{lock(false);renderHand();}}
-async function submit(){if(busy||!canPlay())return;lock(true);selectionEpoch++;const previousHistory=view.history.length;
+async function undo(reset=false,keep=null){if(busy||!actions.length)return;lock(true);selectionEpoch++;const next=reset?[]:actions.slice(0,keep??-1);try{const data=await api(`/matches/${current.id}/preview`,{method:'POST',body:{revision:view.revision,actions:next}});actions=next;view=data;selected=null;legal=[];saveDraft();render();}catch(e){toast(e.message);}finally{lock(false);renderHand();}}
+async function submit(){if(busy||!canPlay())return;lock(true);selectionEpoch++;
  try{view=await api(`/matches/${current.id}/submit`,{method:'POST',body:{revision:view.revision,actions}});actions=[];selected=null;legal=[];saveDraft();saveMatch({...current,result:view.state.winner===null?`Turn ${view.state.turn}`:`${team(view.state.winner)} victory`});render();tone('heal');if(current.mode==='hotseat'&&view.state.winner===null)offerHandoff();else if(current.mode==='practice'){const latest=view.history.slice(-1)[0];if(latest?.player===1)animateEvents(latest.events);}}
  catch(e){toast(e.message);if(e.status===409){await refresh(true);}}finally{lock(false);renderHand();}
 }
@@ -138,6 +148,10 @@ function options(){modal(`<h2>Match options</h2><p>Keep your private player link
 function guide(){modal(`<h2>Welcome to the academy.</h2><p>Destroy all enemy crystals, or eliminate every enemy hero and reserve hero.</p><ol><li><b>Deploy:</b> select a hero from your hand, then a glowing corner square on your side.</li><li><b>Plan:</b> select a standing hero. Blue squares show moves, red squares attacks, green squares healing or a Ninja swap.</li><li><b>Equip:</b> select an item, then a friendly hero. Inferno targets a 3×3 area.</li><li><b>Finish the job:</b> heroes at zero health can be revived. Move onto a fallen hero to stomp it permanently.</li><li><b>Commit:</b> each action costs one of your five points. Undo or reset as much as you like before submitting.</li></ol><p><b>Premium squares:</b> crossed swords add 100 power; the shield adds 20% physical resistance; holding the purple crystal adds 300 damage to attacks against enemy crystals.</p><p>Hands refill after submission. Your opponent's hand is hidden. In practice mode you begin with a deployed squad and play against a simple sparring bot.</p><button class="gold" id="guide-done">Got it — let's play</button>`);$('#guide-done').onclick=()=>$('#modal').close();}
 function fidelity(){modal(`<h2>Faithful numbers. Honest limits.</h2><p>This build reconstructs the original Council using launch-era stat tables. It is not yet a verified exact clone.</p><table><tr><th>Hero</th><th>HP</th><th>Power</th><th>Move</th><th>Range</th></tr>${Object.entries(rulebook.units).filter(([k])=>k!=='crystal').map(([k,u])=>`<tr><td>${u.name}</td><td>${u.hp}</td><td>${u.power}</td><td>${u.move}</td><td>${u.reach}</td></tr>`).join('')}</table><p>Wizard chain targeting, line-of-sight corners, crystal health, card exchange ordering, and some cross-version healing details remain provisional. Other factions are not implemented yet.</p><p>Sources: <a href="https://www.destructoid.com/a-starters-guide-to-robot-entertainments-hero-academy/" target="_blank" rel="noreferrer">2012 firsthand guide</a> · <a href="https://wyattcheng.blogspot.com/2012/02/" target="_blank" rel="noreferrer">Army inventory counts</a> · <a href="https://njustesen.github.io/njustesen/publications/justesen-masterthesis.pdf" target="_blank" rel="noreferrer">2015 research thesis</a>.</p><p>The full implementation ledger is in the repository's <code>docs/FIDELITY.md</code>. Artwork and sound are original approximations.</p>`);}
 $('#home').onclick=e=>{e.preventDefault();if(!busy)lobby();};$('#back').onclick=()=>{if(!busy)lobby();};
+$('#turn-plan').onclick=e=>{const button=e.target.closest('[data-rewind]');if(button)undo(false,Number(button.dataset.rewind));};
+$('#watch-latest').onclick=()=>watchReplay(Number($('#watch-latest').dataset.turn));
+$('#pass-device').onclick=offerHandoff;
+$('#play-again').onclick=()=>create(current.mode);
 $('#undo').onclick=()=>undo();$('#reset').onclick=()=>undo(true);$('#submit').onclick=submit;
 $('#exchange').onclick=()=>{const action=legal.find(l=>l.action.type==='swap_card')?.action;if(action)perform(action);};
 $('#journal').onclick=e=>{const button=e.target.closest('[data-replay]');if(button)watchReplay(Number(button.dataset.replay));};
@@ -146,6 +160,7 @@ $('#sound-button').onclick=()=>{sound=!sound;$('#sound-button').textContent=soun
 for(const button of document.querySelectorAll('[data-create]'))button.onclick=()=>create(button.dataset.create);
 window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='z'&&current&&!$('#modal').open){e.preventDefault();undo();}if(e.key==='Escape'&&!$('#modal').open){selected=null;legal=[];selectionEpoch++;if(view)render();}});
 window.addEventListener('beforeunload',()=>saveDraft());
+window.addEventListener('hashchange',()=>location.reload());
 setInterval(()=>{if(!document.hidden)refresh();},8000);
 async function start(){
  $('#hero-art').innerHTML=portrait('knight',0)+portrait('wizard',1)+portrait('crystal',0);

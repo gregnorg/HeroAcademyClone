@@ -10,7 +10,7 @@ Open [the academy](http://localhost:8080) after starting Docker. Choose:
 - **Pass & play:** two players on this Mac, with a handoff between turns.
 - **Friendly duel:** private invitation and player links for asynchronous play. The current localhost setup works only on this Mac; remote friends need hosting.
 
-Plan up to five actions, undo or reset freely, then submit. Your draft survives browser reloads; committed turns live in PostgreSQL. The battle journal offers step-by-step replays for newly submitted turns. Hover or focus an attack target to preview damage.
+Plan up to five actions, undo or reset freely, then submit. Click any step in the action plan to undo that step and everything after it. Your draft survives browser reloads; committed turns live in PostgreSQL. The battle journal offers step-by-step replays for newly submitted turns, with a shortcut to the opponent’s last turn. Hover or focus an attack target to preview damage.
 
 The game includes deployment, movement, equipment, combat, Wizard chains, Knight knockback, Ninja swaps, healing, revival, stomping, consumables, premium squares, reinforcements, victory, and resignation.
 
@@ -64,7 +64,7 @@ API integration tests require the running Compose stack:
 docker compose exec -T app python - < tests/test_api.py
 ```
 
-API tests create disposable matches and remove only their own rows. They exercise private access, invitations, preview/commit behavior, stale revisions, malformed actions, replay privacy, resignation, and bot responses. Browser checks cover turn planning, undo, draft restoration, submission, and replay controls.
+API tests create disposable matches and remove only their own rows. They exercise private access, invitations, preview/commit behavior, stale revisions, malformed actions, replay privacy, resignation, and bot responses. Browser checks cover turn planning, action-plan rewind, draft restoration, submission, replay controls, and pass-and-play handoff. Bot simulations exercised 153 turns across two seeded practice games with no occupancy or health invariant failures; one game reached victory and the other repeated a healing/attacking cycle, a known limitation of the greedy opponent.
 
 ## Source layout
 
