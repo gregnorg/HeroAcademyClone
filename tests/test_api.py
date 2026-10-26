@@ -1,5 +1,4 @@
 import unittest
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 import server
 
@@ -7,26 +6,18 @@ class APITests(unittest.TestCase):
     def setUp(self):
         self.client=server.app.test_client()
         self.ids=[]
-        self.name='test_'+uuid.uuid4().hex[:16]
-        r=self.client.post('/api/account/register',json=dict(username=self.name,email=self.name+'@example.test',password='test password long'),headers={'X-Requested-With':'CrystalTactics'},environ_overrides={'REMOTE_ADDR':self.name})
-        self.assertEqual(r.status_code,201,r.get_json())
-        self.csrf=r.get_json()['csrf'];self.uid=r.get_json()['user']['id']
-        self.client.environ_base['HTTP_X_CSRF_TOKEN']=self.csrf
     def tearDown(self):
         with server.database() as db:
             for mid in self.ids: db.execute('DELETE FROM matches WHERE id=%s',(mid,))
-            db.execute('DELETE FROM accounts WHERE id=%s',(self.uid,))
-            db.execute('DELETE FROM auth_limits WHERE key IN (%s,%s)',(server.accounts.hashed('ip:'+self.name),server.accounts.hashed('name:'+self.name)))
     def create(self,mode='hotseat'):
         response=self.client.post('/api/matches',json={'mode':mode})
         self.assertEqual(response.status_code,201)
         data=response.get_json(); self.ids.append(data['id'])
-        data.update(token='0',other_token='1')
         return data
-    def auth(self,token): return {'X-Player-Side':token,'X-CSRF-Token':self.csrf}
+    def auth(self,token): return {'Authorization':'Bearer '+token}
     def test_persistence_hidden_hand_and_auth(self):
         m=self.create(); url='/api/matches/'+m['id']
-        self.assertEqual(server.app.test_client().get(url).status_code,401)
+        self.assertEqual(self.client.get(url).status_code,403)
         data=self.client.get(url,headers=self.auth(m['token'])).get_json()
         self.assertNotIn('decks',data['state']); self.assertNotIn('hands',data['state'])
         self.assertEqual(len(data['state']['hand']),6)
@@ -53,7 +44,7 @@ class APITests(unittest.TestCase):
         joined=self.client.post(url+'/join',json={'invite':m['invite']})
         self.assertEqual(joined.status_code,200)
         self.assertEqual(self.client.post(url+'/join',json={'invite':m['invite']}).status_code,403)
-        self.assertEqual(self.client.get(url,headers=self.auth('1')).status_code,200)
+        self.assertEqual(self.client.get(url,headers=self.auth(joined.get_json()['token'])).status_code,200)
     def test_replay_never_leaks_hands(self):
         m=self.create(); url='/api/matches/'+m['id']; h=self.auth(m['token'])
         state=self.client.get(url,headers=h).get_json()['state']
@@ -67,13 +58,12 @@ class APITests(unittest.TestCase):
         for frame in replay.get_json()['frames']:
             self.assertEqual(frame['hand'],[])
             self.assertNotIn('hands',frame); self.assertNotIn('decks',frame)
-        self.assertEqual(server.app.test_client().get(url+'/replay/1').status_code,401)
+        self.assertEqual(self.client.get(url+'/replay/1').status_code,403)
         self.assertEqual(self.client.get(url+'/replay/999',headers=h).status_code,404)
     def test_simultaneous_submission_commits_once(self):
         m=self.create(); url='/api/matches/'+m['id']; h=self.auth(m['token'])
         def submit(_):
             with server.app.test_client() as client:
-                client.set_cookie(server.accounts.COOKIE,self.client.get_cookie(server.accounts.COOKIE).value)
                 return client.post(url+'/submit',headers=h,json={'revision':0,'actions':[]}).status_code
         with ThreadPoolExecutor(max_workers=2) as pool:
             self.assertEqual(sorted(pool.map(submit,range(2))),[200,409])
@@ -114,7 +104,7 @@ class APITests(unittest.TestCase):
     def test_dark_elf_match_and_bot(self):
         response=self.client.post('/api/matches',json={'mode':'practice','factions':['council','dark_elves']})
         self.assertEqual(response.status_code,201)
-        m=response.get_json();m['token']='0';self.ids.append(m['id'])
+        m=response.get_json();self.ids.append(m['id'])
         url='/api/matches/'+m['id'];h=self.auth(m['token'])
         result=self.client.post(url+'/submit',headers=h,json={'revision':0,'actions':[]})
         self.assertEqual(result.status_code,200)
@@ -125,7 +115,7 @@ class APITests(unittest.TestCase):
     def test_dwarves_and_saved_barrier(self):
         response=self.client.post('/api/matches',json={'mode':'practice','factions':['dwarves','dark_elves']})
         self.assertEqual(response.status_code,201)
-        m=response.get_json();m['token']='0';self.ids.append(m['id'])
+        m=response.get_json();self.ids.append(m['id'])
         url='/api/matches/'+m['id'];h=self.auth(m['token'])
         state=self.client.get(url,headers=h).get_json()['state']
         engineer=next(u for u in state['units'] if u['kind']=='engineer')
