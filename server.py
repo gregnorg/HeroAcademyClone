@@ -7,11 +7,12 @@ from contextlib import contextmanager
 import psycopg
 from psycopg.types.json import Jsonb
 from psycopg.rows import dict_row
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from werkzeug.exceptions import HTTPException
 
 import rules
 import bot
+import accounts
 
 app = Flask(__name__, static_folder='public', static_url_path='')
 app.config['MAX_CONTENT_LENGTH']=32768
@@ -27,11 +28,15 @@ def initialize():
     with database() as db:
         db.execute('''CREATE TABLE IF NOT EXISTS matches (
             id UUID PRIMARY KEY, mode TEXT NOT NULL, state JSONB NOT NULL,
-            revision INTEGER NOT NULL DEFAULT 0, token0 TEXT NOT NULL, token1 TEXT,
+            revision INTEGER NOT NULL DEFAULT 0,
             invite TEXT, joined BOOLEAN NOT NULL DEFAULT FALSE,
             history JSONB NOT NULL DEFAULT '[]'::jsonb,
             created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now())''')
+        accounts.schema(db)
+        # Retire capabilities permanently; preserve historical match states.
+        db.execute('ALTER TABLE matches DROP COLUMN IF EXISTS token0, DROP COLUMN IF EXISTS token1')
+        db.execute('UPDATE matches SET invite=NULL WHERE NOT EXISTS (SELECT 1 FROM match_players p WHERE p.match_id=matches.id)')
 
 def digest(token):
     return hashlib.sha256(token.encode()).hexdigest()
@@ -47,12 +52,12 @@ def get_match(db, mid, lock=False):
     except (ValueError,TypeError): raise HTTPExceptionWithCode(404,'Match not found.')
     row=db.execute('SELECT * FROM matches WHERE id=%s'+(' FOR UPDATE' if lock else ''),(mid,)).fetchone()
     if not row: raise HTTPExceptionWithCode(404,'Match not found.')
-    authorization=request.headers.get('Authorization','')
-    require_token=authorization.removeprefix('Bearer ')
-    token_hash=digest(require_token)
-    side=next((p for p in (0,1) if row[f'token{p}'] and secrets.compare_digest(token_hash,row[f'token{p}'])),None)
-    if side is None: raise HTTPExceptionWithCode(403,'This player link is not valid for this match.')
-    return row,side
+    if g.get('user'):
+        owned=db.execute('SELECT side FROM match_players WHERE match_id=%s AND account_id=%s ORDER BY side',(mid,g.user['id'])).fetchall()
+        wanted=request.headers.get('X-Player-Side')
+        side=next((r['side'] for r in owned if wanted is None or str(r['side'])==wanted),None)
+        if side is not None:return row,side
+    raise HTTPExceptionWithCode(403 if g.get('user') else 401,'Log in with an account that owns this match.')
 
 class HTTPExceptionWithCode(Exception):
     def __init__(self,code,message): self.code=code; self.message=message
@@ -93,20 +98,22 @@ def rulebook():
 
 @app.post('/api/matches')
 def create_match():
+    if not g.user:raise HTTPExceptionWithCode(401,'Log in to start a battle.')
     data=body(); mode=data.get('mode','practice')
     rules.require(mode in ('practice','hotseat','friend'),'Choose a supported game mode.')
-    mid=str(uuid.uuid4()); token0=secrets.token_urlsafe(32); token1=secrets.token_urlsafe(32); invite=secrets.token_urlsafe(24)
+    mid=str(uuid.uuid4()); invite=secrets.token_urlsafe(24)
     state=rules.new_game(secrets.randbits(64),practice=mode=='practice',factions=data.get('factions'))
     with database() as db:
-        db.execute('INSERT INTO matches (id,mode,state,token0,token1,invite,joined) VALUES (%s,%s,%s,%s,%s,%s,%s)',
-                   (mid,mode,Jsonb(state),digest(token0),digest(token1) if mode!='friend' else None,digest(invite) if mode=='friend' else None,mode!='friend'))
-    result=dict(id=mid,token=token0,mode=mode)
-    if mode=='hotseat': result['other_token']=token1
+        db.execute('INSERT INTO matches (id,mode,state,invite,joined) VALUES (%s,%s,%s,%s,%s)',
+                   (mid,mode,Jsonb(state),digest(invite) if mode=='friend' else None,mode!='friend'))
+        for side in ([0,1] if mode=='hotseat' else [0]):db.execute('INSERT INTO match_players VALUES (%s,%s,%s)',(mid,side,g.user['id']))
+    result=dict(id=mid,mode=mode,account=True,side=0)
     if mode=='friend': result['invite']=invite
     return jsonify(result),201
 
 @app.post('/api/matches/<mid>/join')
 def join_match(mid):
+    if not g.user:raise HTTPExceptionWithCode(401,'Log in to join a battle.')
     data=body(); invitation=data.get('invite','')
     rules.require(isinstance(invitation,str),'Invalid invitation.')
     try: uuid.UUID(mid)
@@ -115,9 +122,9 @@ def join_match(mid):
         row=db.execute('SELECT * FROM matches WHERE id=%s FOR UPDATE',(mid,)).fetchone()
         if not row or not row['invite'] or not secrets.compare_digest(digest(invitation),row['invite']):
             raise HTTPExceptionWithCode(403,'This invitation is invalid or has already been claimed.')
-        token=secrets.token_urlsafe(32)
-        db.execute('UPDATE matches SET token1=%s,joined=TRUE,invite=NULL WHERE id=%s',(digest(token),mid))
-    return jsonify(id=mid,token=token,mode='friend')
+        db.execute('UPDATE matches SET joined=TRUE,invite=NULL WHERE id=%s',(mid,))
+        db.execute('INSERT INTO match_players VALUES (%s,1,%s)',(mid,g.user['id']))
+    return jsonify(id=mid,mode='friend',account=True,side=1)
 
 def envelope(row,side,state=None):
     return dict(id=str(row['id']),mode=row['mode'],revision=row['revision'],side=side,joined=row['joined'],
@@ -129,6 +136,15 @@ def read_match(mid):
     with database() as db:
         row,side=get_match(db,mid)
     return jsonify(envelope(row,side))
+
+@app.post('/api/matches/<mid>/invite')
+def renew_invite(mid):
+    with database() as db:
+        row,side=get_match(db,mid,True)
+        rules.require(side==0 and row['mode']=='friend' and not row['joined'],'No pending invitation for this side.')
+        invitation=secrets.token_urlsafe(24)
+        db.execute('UPDATE matches SET invite=%s WHERE id=%s',(digest(invitation),mid))
+    return jsonify(invite=invitation)
 
 def replay(row,side,data):
     if type(data.get('revision')) is not int or data['revision']!=row['revision']:
@@ -204,5 +220,7 @@ def resign(mid):
         row['state']['winner']=1-side; row['revision']+=1
         db.execute('UPDATE matches SET state=%s,revision=%s,updated_at=now() WHERE id=%s',(Jsonb(row['state']),row['revision'],mid))
     return jsonify(envelope(row,side))
+
+accounts.install(app,database,HTTPExceptionWithCode)
 
 if __name__=='__main__': initialize()
